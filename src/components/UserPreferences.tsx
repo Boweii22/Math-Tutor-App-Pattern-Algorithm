@@ -10,12 +10,18 @@ interface UserPreferencesProps {
 
 export default function UserPreferences({ learningAssistant, onPreferencesUpdate }: UserPreferencesProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [preferences, setPreferences] = useState({
+  const [preferences, setPreferences] = useState<{
+    learningStyle: 'visual' | 'verbal' | 'kinesthetic' | 'mixed';
+    preferredPathType: 'fastest' | 'mostThorough' | 'examFocused';
+    dailyGoal: number;
+    availableTime: number;
+    notifications: boolean;
+    darkMode: boolean;
+  }>({
     learningStyle: 'mixed',
-    preferredPath: 'fastest',
+    preferredPathType: 'fastest',
     dailyGoal: 30,
     availableTime: 60,
-    difficulty: 'medium',
     notifications: true,
     darkMode: false
   });
@@ -27,6 +33,8 @@ export default function UserPreferences({ learningAssistant, onPreferencesUpdate
       setPreferences(prev => ({
         ...prev,
         ...savedPrefs,
+        learningStyle: savedPrefs.learningStyle || 'mixed',
+        preferredPathType: savedPrefs.preferredPathType || 'fastest',
         dailyGoal: savedPrefs.dailyGoal || 30,
         availableTime: savedPrefs.availableTime || 60
       }));
@@ -35,12 +43,20 @@ export default function UserPreferences({ learningAssistant, onPreferencesUpdate
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target as HTMLInputElement;
-    const newValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
     
-    setPreferences(prev => ({
-      ...prev,
-      [name]: type === 'number' ? parseInt(value, 10) : newValue
-    }));
+    setPreferences(prev => {
+      const newValue = type === 'checkbox' 
+        ? (e.target as HTMLInputElement).checked 
+        : type === 'number' 
+          ? parseInt(value, 10) 
+          : value;
+      
+      // Ensure type safety for the preferences object
+      return {
+        ...prev,
+        [name]: newValue
+      };
+    });
   };
 
   const savePreferences = () => {
@@ -87,11 +103,10 @@ export default function UserPreferences({ learningAssistant, onPreferencesUpdate
               <h3 className="text-lg font-medium text-gray-800 mb-3">Learning Style</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[
-                  { value: 'visual', label: 'Visual', icon: '👁️' },
-                  { value: 'auditory', label: 'Auditory', icon: '👂' },
-                  { value: 'reading', label: 'Reading/Writing', icon: '📝' },
-                  { value: 'kinesthetic', label: 'Kinesthetic', icon: '✋' },
-                  { value: 'mixed', label: 'Mixed', icon: '🔄' }
+                  { value: 'visual' as const, label: 'Visual', icon: '👁️' },
+                  { value: 'verbal' as const, label: 'Verbal', icon: '🗣️' },
+                  { value: 'kinesthetic' as const, label: 'Kinesthetic', icon: '✋' },
+                  { value: 'mixed' as const, label: 'Mixed', icon: '🔄' }
                 ].map(style => (
                   <label 
                     key={style.value}
@@ -128,16 +143,16 @@ export default function UserPreferences({ learningAssistant, onPreferencesUpdate
                   <label 
                     key={path.value}
                     className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
-                      preferences.preferredPath === path.value 
+                      preferences.preferredPathType === path.value 
                         ? 'border-blue-500 bg-blue-50' 
                         : 'border-gray-200 hover:border-blue-300'
                     }`}
                   >
                     <input
                       type="radio"
-                      name="preferredPath"
+                      name="preferredPathType"
                       value={path.value}
-                      checked={preferences.preferredPath === path.value}
+                      checked={preferences.preferredPathType === path.value}
                       onChange={handleChange}
                       className="sr-only"
                     />
