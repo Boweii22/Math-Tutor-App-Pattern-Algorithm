@@ -787,7 +787,7 @@ export default function LearningPathVisualization({
               >
                 <h4 className="font-medium text-gray-900 dark:text-white">{topic.name}</h4>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {topic.description}
+                  {topic.difficulty} • {topic.estimatedTime || 'N/A'} min
                 </p>
               </button>
             ))}
