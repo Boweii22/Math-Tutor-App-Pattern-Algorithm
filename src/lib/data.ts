@@ -403,8 +403,7 @@ export const problems: Problem[] = [
     question: 'A rectangle has a length that is 3 more than twice its width. If the perimeter is 30, what are the dimensions?',
     answer: 'width=4,length=11',
     solution: 'Step 1: Let width be w\nStep 2: Length = 2w + 3\nStep 3: Perimeter = 2(w + l) = 30\nStep 4: Substitute length: 2(w + (2w + 3)) = 30\nStep 5: Solve for w: 6w + 6 = 30 → 6w = 24 → w = 4\nStep 6: Length = 2(4) + 3 = 11',
-    requiredTopics: ['word_problems', 'intermediate_algebra'],
-    requiredTopics: ['word_problems', 'basic_algebra'],
+    requiredTopics: ['word_problems', 'intermediate_algebra', 'basic_algebra'],
     difficulty: 'hard',
     hints: ['Let w = width, then length = 2w + 3. Use perimeter formula.']
   },
