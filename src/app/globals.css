@@ -51,10 +51,21 @@
 
 @layer base {
   * {
-    @apply border-gray-200 dark:border-gray-800;
+    border-color: rgb(229 231 235);
   }
+  
+  .dark * {
+    border-color: rgb(31 41 55);
+  }
+  
   body {
-    @apply bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-50;
+    background-color: rgb(255 255 255);
+    color: rgb(17 24 39);
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  .dark body {
+    background-color: rgb(3 7 18);
+    color: rgb(249 250 251);
   }
 }
