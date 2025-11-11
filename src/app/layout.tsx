@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import InfoButton from "@/components/InfoButton";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,10 +28,9 @@ export default function RootLayout({
     // This addresses the global hydration mismatch error by telling React
     // to ignore minor differences between the server and client HTML for this element.
     <html lang="en" suppressHydrationWarning> 
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans`}>
         {children}
+        <InfoButton />
       </body>
     </html>
   );
