@@ -1,11 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-// Corrected redundant imports: using 'Topic' and 'Problem' types from data,
-// and 'getTopicById' from data.
-import { learningAssistant } from '@/lib/gapAnalysis'; 
-import { getTopicById, topics } from '@/lib/data';
-import { getRandomProblem } from '@/lib/data';
+import { MathLearningAssistant } from '@/lib/gapAnalysis';
+import { topics, problems, getTopicById, getRandomProblem, type Topic, type Problem, type Difficulty } from '@/lib/data';
 import dynamic from 'next/dynamic';
 
 // Dynamically import components with no SSR
@@ -13,6 +10,12 @@ const LearningPathVisualization = dynamic(
   () => import('@/components/LearningPathVisualization'),
   { ssr: false }
 );
+
+// Progress component with simplified typing
+const Progress = dynamic(() => import('@/components/ui/progress').then(mod => mod.Progress), {
+  ssr: false,
+  loading: () => <div className="h-2 w-full bg-gray-200 rounded-full"></div>
+});
 
 const ProgressVisualization = dynamic(
   () => import('@/components/ProgressVisualization'),
@@ -25,38 +28,15 @@ const UserPreferences = dynamic(
   { ssr: false }
 );
 
-// --- Type Definitions (Ensuring local consistency for types imported from '@/lib/data') ---
-type Progress = {
+// --- Type Definitions ---
+type ProgressData = {
   mastered: number;
   inProgress: number;
   notStarted: number;
 };
 
-type Difficulty = 'easy' | 'medium' | 'hard';
-
-interface Topic {
-  id: string;
-  name: string;
-  prerequisites: string[];
-  difficulty: Difficulty;
-  mastery?: number;
-  lastPracticed?: number;
-  description?: string;
-  category?: string;
-}
-
-interface Problem {
-  id: string;
-  question: string;
-  answer: string;
-  solution: string;
-  requiredTopics: string[];
-  difficulty: Difficulty;
-  hints: string[];
-  timeEstimate?: number;
-  commonMistakes?: string[];
-  relatedTopics?: string[];
-}
+// Initialize the learning assistant instance
+const learningAssistant = new MathLearningAssistant();
 
 // --- MathTutor Component ---
 export default function MathTutor() {
@@ -203,7 +183,7 @@ export default function MathTutor() {
   }
   
   // --- Progress Calculation (always run before render) ---
-  const progress: Progress = {
+  const progress: ProgressData = {
     mastered: 0,
     inProgress: 0,
     notStarted: 0

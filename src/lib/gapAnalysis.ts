@@ -230,24 +230,35 @@ export class MathLearningAssistant {
     return dueTopics.slice(0, limit);
   }
   
-  // Get recommended topics for review based on spaced repetition
-  getRecommendedTopics(limit: number = 3): string[] {
+  // Get recommended topics based on current progress and learning goals
+  getRecommendedTopics(limit: number = 3, targetTopicId?: string): { topic: Topic; reason: string }[] {
     // First, get topics that are due for review
     const dueTopics = this.getTopicsDueForReview(limit);
     
     // If we have enough due topics, return them
     if (dueTopics.length >= limit) {
-      return dueTopics.map(t => t.topicId);
+      return dueTopics.map(t => ({
+        topic: getTopicById(t.topicId)!,
+        reason: `Due for review (${Math.round((1 - (t.dueIn / 30)) * 100)}% overdue)`
+      }));
     }
     
     // Otherwise, find topics that need more practice
-    const topicsNeedingPractice = Object.entries(this.topicMastery)
-      .filter(([topicId, mastery]) => mastery < MASTERY_THRESHOLDS.easy)
-      .sort((a, b) => a[1] - b[1]) // Sort by mastery (lowest first)
-      .slice(0, limit - dueTopics.length)
-      .map(([topicId]) => topicId);
-    
-    return [...dueTopics.map(t => t.topicId), ...topicsNeedingPractice].slice(0, limit);
+    const topicsNeedingPractice = topics
+      .filter(topic => this.getTopicMastery(topic.id) < MASTERY_THRESHOLDS.easy)
+      .sort((a, b) => this.getTopicMastery(a.id) - this.getTopicMastery(b.id)) // Sort by mastery (lowest first)
+      .slice(0, limit - dueTopics.length);
+      
+    return [
+      ...dueTopics.map(t => ({
+        topic: getTopicById(t.topicId)!,
+        reason: `Due for review (${Math.round((1 - (t.dueIn / 30)) * 100)}% overdue)`
+      })),
+      ...topicsNeedingPractice.map(topic => ({
+        topic,
+        reason: `Needs more practice (${Math.round(this.getTopicMastery(topic.id) * 100)}% mastered)`
+      }))
+    ].slice(0, limit);
   }
   
   // Get current preferences
@@ -559,48 +570,6 @@ export class MathLearningAssistant {
       const bMastery = this.getTopicMastery(b.topic.id);
       return aMastery - bMastery; // Lower mastery first
     });
-  }
-  
-  // Get recommended topics based on current progress and learning goals (kept mostly the same)
-  getRecommendedTopics(limit: number = 3, targetTopicId?: string): { topic: Topic; reason: string }[] {
-    
-    // Logic to select topics:
-    // 1. Identify unmastered topics (mastery < 0.9).
-    // 2. Filter topics whose prerequisites are met (readiness > 0.7).
-    // 3. Score based on (Readiness * (1 - Mastery) * Impact)
-    
-    const scoredTopics: { topic: Topic; score: number; reason: string }[] = topics
-      .filter(topic => this.getTopicMastery(topic.id) < 0.9)
-      .map(topic => {
-        const readiness = this.analyzeTopicReadiness(topic.id);
-        const mastery = this.getTopicMastery(topic.id);
-        const impact = topic.impactScore || 0.5;
-        
-        let reason = `Mastery: ${Math.round(mastery * 100)}%`;
-        
-        if (readiness?.missingPrerequisites.length) {
-            const mostCriticalPrereq = readiness.missingPrerequisites
-                .sort((a, b) => (b.weight * b.gap) - (a.weight * a.gap))[0];
-            const prereqTopic = getTopicById(mostCriticalPrereq.topicId);
-            reason = `Needs review of ${prereqTopic?.name || 'prerequisite'} first.`;
-        } else {
-            reason = `High readiness, good for practice.`;
-        }
-
-        // Score: (Readiness) * (Mastery Gap) * (Impact)
-        let score = (readiness?.readiness || 0) * (1 - mastery) * impact;
-        
-        // Apply recency decay (boost score if not practiced recently)
-        const timeSincePracticed = this.getTimeSinceLastPracticed(topic.id);
-        const boostFactor = Math.min(1.5, timeSincePracticed / (30 * 24 * 60 * 60 * 1000)); // Max 1.5x boost after 30 days
-        score *= boostFactor;
-        
-        return { topic, score, reason };
-      });
-      
-    return scoredTopics
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
   }
   
   // Get recommended problems based on knowledge gaps (kept the same)

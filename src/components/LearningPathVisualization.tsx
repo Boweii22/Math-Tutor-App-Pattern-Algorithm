@@ -9,11 +9,11 @@ export interface LearningResource {
   id: string;
   type: 'video' | 'article' | 'practice' | 'quiz';
   title: string;
-  description?: string;
+  description: string;
   duration: number;
-  url?: string;
-  completed?: boolean;
-  videoId?: string;
+  url: string;
+  completed: boolean;
+  videoId: string; // Changed from optional to required string
 }
 
 export interface LearningPathStep {
@@ -277,29 +277,31 @@ export default function LearningPathVisualization({
                 id: `resource-${topicId}-video`,
                 type: 'video' as const,
                 title: `Video: ${topic?.name || 'Topic Overview'}`,
-                description: 'Watch an explanation of this topic',
-                duration: 15,
-                url: `https://www.youtube.com/watch?v=${videoId}`,
+                description: `Learn about ${topic?.name || 'this topic'} through an engaging video.`,
+                duration: 10, // minutes
+                url: `#${topicId}-video`,
                 completed: false,
-                videoId
+                videoId: (topic as any)?.videoId?.id || 'default'
               },
               {
                 id: `resource-${topicId}-practice`,
                 type: 'practice' as const,
                 title: `Practice: ${topic?.name || 'Topic Exercises'}`,
-                description: 'Solve practice problems',
+                description: `Practice what you've learned with interactive exercises.`,
                 duration: 20,
-                url: `#/practice/${topicId}`,
-                completed: false
+                url: `#${topicId}-practice`,
+                completed: false,
+                videoId: '' // Empty string for non-video resources
               },
               {
                 id: `resource-${topicId}-quiz`,
                 type: 'quiz' as const,
                 title: `Quiz: ${topic?.name || 'Topic Quiz'}`,
-                description: 'Test your knowledge',
-                duration: 10,
-                url: `#/quiz/${topicId}`,
-                completed: false
+                description: `Test your understanding with a short quiz.`,
+                duration: 15,
+                url: `#${topicId}-quiz`,
+                completed: false,
+                videoId: '' // Empty string for non-video resources
               }
             ],
             currentMastery: learningAssistant.getTopicMastery(topicId),
