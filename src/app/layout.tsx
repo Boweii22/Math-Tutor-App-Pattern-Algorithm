@@ -23,7 +23,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // FIX: Add suppressHydrationWarning to the root HTML tag.
+    // This addresses the global hydration mismatch error by telling React
+    // to ignore minor differences between the server and client HTML for this element.
+    <html lang="en" suppressHydrationWarning> 
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

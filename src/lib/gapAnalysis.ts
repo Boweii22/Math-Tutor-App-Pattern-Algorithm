@@ -7,7 +7,7 @@ type UserResponse = {
   timeSpent: number; // in seconds
 };
 
-type UserPreferences = {
+export type UserPreferences = {
   learningStyle: 'visual' | 'verbal' | 'kinesthetic' | 'mixed';
   preferredPathType: 'fastest' | 'mostThorough' | 'examFocused';
   dailyGoal: number; // in minutes
