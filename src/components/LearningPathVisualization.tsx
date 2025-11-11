@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Topic, getTopicById, topics, Problem } from '@/lib/data';
-import { MathLearningAssistant, UserPreferences } from '@/lib/gapAnalysis';
-import { useRouter } from 'next/navigation';
+import { Topic, getTopicById, topics } from '@/lib/data';
+import { MathLearningAssistant } from '@/lib/gapAnalysis';
 
-// --- Type Definitions (Needed to define the component's props and internal state types) ---
+// --- Type Definitions ---
 export interface LearningResource {
   id: string;
   type: 'video' | 'article' | 'practice' | 'quiz';
@@ -14,6 +13,7 @@ export interface LearningResource {
   duration: number;
   url?: string;
   completed?: boolean;
+  videoId?: string;
 }
 
 export interface LearningPathStep {
@@ -22,8 +22,8 @@ export interface LearningPathStep {
   name: string;
   description?: string;
   estimatedTime: number;
-  resources?: LearningResource[];
-  prerequisites?: string[]; // Assuming simple Topic IDs here
+  resources: LearningResource[];
+  prerequisites?: string[];
   completed?: boolean;
   currentMastery?: number;
   reason?: string;
@@ -53,103 +53,132 @@ interface LearningPathVisualizationProps {
 }
 
 // --- Helper Components ---
-
-// ResourceCard component for displaying learning resources
-function ResourceCard({ 
+const ResourceCard = ({ 
   resource,
-  onComplete 
+  onComplete,
+  onClick
 }: { 
   resource: LearningResource;
   onComplete: () => void;
-}) {
-  const getResourceIcon = () => {
-    const baseClasses = 'h-8 w-8 rounded-full flex items-center justify-center';
+  onClick: () => void;
+}) => {
+  const getResourceTypeInfo = () => {
+    const baseClasses = 'h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0';
     
     switch (resource.type) {
       case 'video':
-        return (
-          <div className={`${baseClasses} bg-red-100 text-red-600`}>
-            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v8a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" />
-            </svg>
-          </div>
-        );
-      case 'article':
-        return (
-          <div className={`${baseClasses} bg-blue-100 text-blue-600`}>
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-            </svg>
-          </div>
-        );
+        return {
+          icon: (
+            <div className={`${baseClasses} bg-red-100 text-red-600`}>
+              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v8a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" />
+              </svg>
+            </div>
+          ),
+          buttonText: 'Watch',
+          buttonClass: 'bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-800/50 dark:text-red-400'
+        };
       case 'practice':
-        return (
-          <div className={`${baseClasses} bg-green-100 text-green-600`}>
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-        );
+        return {
+          icon: (
+            <div className={`${baseClasses} bg-green-100 text-green-600`}>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          ),
+          buttonText: 'Practice',
+          buttonClass: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900/30 dark:hover:bg-green-800/50 dark:text-green-400'
+        };
       case 'quiz':
-        return (
-          <div className={`${baseClasses} bg-purple-100 text-purple-600`}>
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-        );
+        return {
+          icon: (
+            <div className={`${baseClasses} bg-purple-100 text-purple-600`}>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+          ),
+          buttonText: 'Start Quiz',
+          buttonClass: 'bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/30 dark:hover:bg-purple-800/50 dark:text-purple-400'
+        };
+      case 'article':
+        return {
+          icon: (
+            <div className={`${baseClasses} bg-blue-100 text-blue-600`}>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+              </svg>
+            </div>
+          ),
+          buttonText: 'Read',
+          buttonClass: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-800/50 dark:text-blue-400'
+        };
       default:
-        return (
-          <div className={`${baseClasses} bg-gray-100 text-gray-600`}>
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-        );
+        return {
+          icon: (
+            <div className={`${baseClasses} bg-gray-100 text-gray-600`}>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          ),
+          buttonText: 'View',
+          buttonClass: 'bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300'
+        };
     }
   };
 
+  const { icon, buttonText, buttonClass } = getResourceTypeInfo();
+
   return (
-    <div className="flex items-start p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 transition-colors">
-      <div className="flex-shrink-0 mt-0.5">
-        {getResourceIcon()}
+    <div 
+      className={`flex items-start p-4 rounded-xl border transition-all ${
+        resource.completed 
+          ? 'bg-green-50 border-green-200 dark:bg-green-900/10 dark:border-green-800/50' 
+          : 'bg-white border-gray-200 hover:border-blue-300 dark:bg-gray-800 dark:border-gray-700 dark:hover:border-blue-500/50'
+      }`}
+    >
+      <div className="flex-shrink-0">
+        {icon}
       </div>
       <div className="ml-3 flex-1 min-w-0">
-        <h6 className="text-sm font-medium text-gray-900 truncate">
+        <h6 className="text-sm font-semibold text-gray-900 dark:text-white">
           {resource.title}
         </h6>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
           {resource.type.charAt(0).toUpperCase() + resource.type.slice(1)} • {resource.duration} min
-          {resource.completed && (
-            <span className="ml-2 inline-flex items-center text-green-600">
-              <svg className="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
-              Completed
-            </span>
-          )}
         </p>
         {resource.description && (
-          <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1.5 line-clamp-2">
             {resource.description}
           </p>
         )}
       </div>
-      <div className="flex items-center ml-2">
+      <div className="flex flex-col items-end ml-2 gap-2">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${buttonClass}`}
+        >
+          {buttonText}
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onComplete();
           }}
-          className={`p-1 ${
+          className={`text-xs flex items-center ${
             resource.completed 
-              ? 'text-green-600 hover:text-green-800' 
-              : 'text-gray-400 hover:text-gray-600'
+              ? 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300' 
+              : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'
           }`}
           title={resource.completed ? 'Mark as not completed' : 'Mark as completed'}
         >
           <svg 
-            className="h-5 w-5" 
+            className="h-3.5 w-3.5 mr-1" 
             fill={resource.completed ? 'currentColor' : 'none'} 
             viewBox="0 0 24 24" 
             stroke="currentColor"
@@ -157,32 +186,16 @@ function ResourceCard({
             <path 
               strokeLinecap="round" 
               strokeLinejoin="round" 
-              strokeWidth={2} 
-              d={resource.completed 
-                ? "M5 13l4 4L19 7" 
-                : "M5 12h14"
-              } 
+              strokeWidth={3} 
+              d={resource.completed ? "M5 13l4 4L19 7" : "M5 12h14"} 
             />
           </svg>
+          {resource.completed ? 'Completed' : 'Mark done'}
         </button>
-        {resource.url && (
-          <a
-            href={resource.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="ml-1 p-1 text-blue-600 hover:text-blue-800"
-            title="Open resource"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
-        )}
       </div>
     </div>
   );
-}
+};
 
 // --- Main Component ---
 export default function LearningPathVisualization({ 
@@ -192,128 +205,142 @@ export default function LearningPathVisualization({
   onTopicSelect,
   className = ''
 }: LearningPathVisualizationProps) {
-  const router = useRouter();
-  const [selectedPath, setSelectedPath] = useState<string>('fastest');
+  // State
+  const [isLoading, setIsLoading] = useState(true);
   const [paths, setPaths] = useState<LearningPath[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<'fastest' | 'mostThorough' | 'examFocused'>('fastest');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [activeLearningPath, setActiveLearningPath] = useState<string | null>(null);
+  const [showComingSoon, setShowComingSoon] = useState(false);
+  const [modalContent, setModalContent] = useState<{
+    title: string;
+    isVideo?: boolean;
+    searchUrl?: string;
+  }>({ title: '', isVideo: false });
 
-  // --- Utility Functions ---
+  // Get the currently selected path data
+  const selectedPathData = paths.find(p => p.strategy === selectedPath);
 
-  const getPathColor = (strategy: string) => {
-    switch (strategy) {
-      case 'fastest': return 'from-blue-500 to-blue-600';
-      case 'mostThorough': return 'from-purple-500 to-purple-600';
-      case 'examFocused': return 'from-green-500 to-green-600';
-      default: return 'from-gray-500 to-gray-600';
-    }
+  // Get YouTube video ID based on topic
+  const getVideoId = (topicId: string): { id?: string; searchUrl: string } => {
+    const topic = getTopicById(topicId);
+    const topicName = topic?.name || 'math';
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(topicName + ' tutorial')}`;
+    
+    const videoMap: Record<string, string> = {
+      'basic_arithmetic': 'kqXpAcZBy2w',
+      'fractions': '5UGuBM9QU0Y',
+      'basic_algebra': 'NybHckSEQBI',
+      'geometry': 'A6wQk8fSBYQ',
+      'intermediate_algebra': 'LwCRRUa8yTU',
+      'word_problems': 'M_PJWQQGrPg'
+    };
+    
+    const videoId = videoMap[topicId];
+    
+    return {
+      id: videoId,
+      searchUrl
+    };
   };
 
-  const getPathIcon = (strategy: string) => {
-    switch (strategy) {
-      case 'fastest': return '⚡';
-      case 'mostThorough': return '🔍';
-      case 'examFocused': return '📝';
-      default: return '➡️';
-    }
-  };
-
-  const getMasteryColor = (mastery: number) => {
-    if (mastery >= 0.8) return 'bg-green-500';
-    if (mastery >= 0.5) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
-
-  // Load paths when target topic or available time changes
+  // Load learning paths
   const loadPaths = useCallback(async () => {
     if (!targetTopicId) return;
     
     setIsLoading(true);
     try {
-      // Generate learning paths using the learning assistant
-      const generatedPaths = await learningAssistant.generateLearningPaths(
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Generate paths with different strategies
+      const generatedPaths = learningAssistant.generateLearningPaths(
         targetTopicId, 
         availableTime
-      ) as LearningPath[];
-      
-      // Transform the generated paths to include required fields
-      const transformedPaths = generatedPaths.map(path => ({
-        ...path,
-        // The original logic here assumes 'path.topics' is an array of IDs.
-        steps: path.topics.map((topicId, index) => {
+      );
+
+      // Transform the generated paths to include resources
+      const transformedPaths = generatedPaths.map(path => {
+        const topicIds = path.topics as string[];
+        const steps = topicIds.map((topicId, index) => {
           const topic = getTopicById(topicId);
-          const mastery = learningAssistant.getTopicMastery(topicId);
+          const videoId = getVideoId(topicId);
           
           return {
             id: `step-${index + 1}-${topicId}`,
             topicId,
             name: topic?.name || `Topic ${index + 1}`,
             description: topic?.description || '',
-            // Assuming default time of 30 min if not available
-            estimatedTime: topic?.estimatedTime || 30, 
-            currentMastery: mastery,
-            completed: false,
+            estimatedTime: topic?.estimatedTime || 30,
             resources: [
               {
                 id: `resource-${topicId}-video`,
                 type: 'video' as const,
                 title: `Video: ${topic?.name || 'Topic Overview'}`,
-                description: 'Introduction to the topic with visual explanations',
+                description: 'Watch an explanation of this topic',
                 duration: 15,
-                url: `#/learn/${topicId}/video`,
-                completed: false
+                url: `https://www.youtube.com/watch?v=${videoId}`,
+                completed: false,
+                videoId
               },
               {
                 id: `resource-${topicId}-practice`,
                 type: 'practice' as const,
                 title: `Practice: ${topic?.name || 'Topic Exercises'}`,
-                description: 'Practice problems to reinforce your understanding',
+                description: 'Solve practice problems',
                 duration: 20,
-                url: `#/learn/${topicId}/practice`,
+                url: `#/practice/${topicId}`,
                 completed: false
               },
               {
                 id: `resource-${topicId}-quiz`,
                 type: 'quiz' as const,
                 title: `Quiz: ${topic?.name || 'Topic Quiz'}`,
-                description: 'Test your understanding with a short quiz',
+                description: 'Test your knowledge',
                 duration: 10,
-                url: `#/learn/${topicId}/quiz`,
+                url: `#/quiz/${topicId}`,
                 completed: false
               }
-            ]
+            ],
+            currentMastery: learningAssistant.getTopicMastery(topicId),
+            completed: false
           };
-        }),
-        totalTime: path.estimatedTime,
-        currentStep: 0,
-        startedAt: undefined,
-        completedSteps: []
-      }));
-      
+        });
+
+        return {
+          ...path,
+          steps,
+          totalTime: path.estimatedTime,
+          currentStep: 0,
+          startedAt: undefined,
+          completedSteps: []
+        };
+      });
+
       setPaths(transformedPaths);
       
-      // Set the default selected path based on user preferences
-      const prefs = learningAssistant.getPreferences();
-      if (prefs?.preferredPathType) {
-        setSelectedPath(prefs.preferredPathType);
-      } else if (transformedPaths.length > 0) {
-        setSelectedPath(transformedPaths[0].strategy);
+      // Set default selected path
+      if (transformedPaths.length > 0) {
+        const prefs = learningAssistant.getPreferences();
+        if (prefs?.preferredPathType && transformedPaths.some(p => p.strategy === prefs.preferredPathType)) {
+          setSelectedPath(prefs.preferredPathType);
+        } else {
+          setSelectedPath(transformedPaths[0].strategy);
+        }
       }
     } catch (error) {
-      console.error('Error generating learning paths:', error);
+      console.error('Error loading learning paths:', error);
     } finally {
       setIsLoading(false);
     }
   }, [targetTopicId, availableTime, learningAssistant]);
-  
+
+  // Load paths when target topic or available time changes
   useEffect(() => {
     if (targetTopicId) {
       loadPaths();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetTopicId, availableTime]); // loadPaths is a dependency, but it's a useCallback, so this is okay.
+  }, [targetTopicId, availableTime, loadPaths]);
 
   // Toggle topic expansion
   const toggleTopic = useCallback((topicId: string) => {
@@ -327,7 +354,7 @@ export default function LearningPathVisualization({
       return newSet;
     });
   }, []);
-  
+
   // Handle starting a learning path
   const handleStartPath = useCallback((path: LearningPath) => {
     const now = Date.now();
@@ -347,95 +374,91 @@ export default function LearningPathVisualization({
       setExpandedTopics(new Set([path.steps[0].topicId]));
     }
   }, []);
-  
-  // Handle completing a step (marking the topic complete)
-  const handleCompleteStep = useCallback((pathId: string, stepIndex: number) => {
-    setPaths(prevPaths => 
-      prevPaths.map(path => {
-        if (path.id === pathId) {
-          const completedSteps = [...(path.completedSteps || [])];
-          if (!completedSteps.includes(stepIndex)) {
-            completedSteps.push(stepIndex);
-          }
-          
-          // If this is the current step, move to the next one
-          let currentStep = path.currentStep || 0;
-          if (currentStep === stepIndex && currentStep < path.steps.length - 1) {
-            currentStep++;
-            // Auto-expand the next topic
-            const nextTopicId = path.steps[currentStep]?.topicId;
-            if (nextTopicId) {
-              setExpandedTopics(prev => new Set(prev).add(nextTopicId));
-            }
-          }
-          
-          return {
-            ...path,
-            currentStep,
-            completedSteps,
-            steps: path.steps.map((step, idx) => 
-              idx === stepIndex ? { ...step, completed: true } : step
-            )
-          };
-        }
-        return path;
-      })
-    );
-  }, []);
-  
+
   // Toggle resource completion
   const toggleResourceComplete = useCallback((pathId: string, stepIndex: number, resourceId: string) => {
     setPaths(prevPaths => 
       prevPaths.map(path => {
         if (path.id === pathId) {
-          return {
-            ...path,
-            steps: path.steps.map((step, idx) => {
-              if (idx === stepIndex && step.resources) {
-                const updatedResources = step.resources.map(resource => 
-                  resource.id === resourceId 
-                    ? { ...resource, completed: !resource.completed }
-                    : resource
-                );
-                
-                // Check if all resources are completed
-                const allResourcesCompleted = updatedResources.every(r => r.completed);
-                
-                return {
-                  ...step,
-                  resources: updatedResources,
-                  // Auto-mark step complete if all resources are finished
-                  completed: allResourcesCompleted
-                };
-              }
-              return step;
-            })
-          };
+          const updatedSteps = path.steps.map((step, idx) => {
+            if (idx === stepIndex && step.resources) {
+              const updatedResources = step.resources.map(resource =>
+                resource.id === resourceId 
+                  ? { ...resource, completed: !resource.completed } 
+                  : resource
+              );
+              return { ...step, resources: updatedResources };
+            }
+            return step;
+          });
+          return { ...path, steps: updatedSteps };
         }
         return path;
       })
     );
   }, []);
-  
-  // Get the currently selected path
-  const selectedPathData = paths.find(p => p.strategy === selectedPath);
-  
-  // Check if a step is completed
-  const isStepCompleted = useCallback((path: LearningPath, stepIndex: number) => {
-    return (path.completedSteps || []).includes(stepIndex) || 
-           (path.steps[stepIndex]?.completed ?? false);
-  }, []);
-  
-  // Calculate progress for a path
-  const calculatePathProgress = useCallback((path: LearningPath) => {
-    if (!path.steps.length) return 0;
-    const completedSteps = path.steps.filter((step, idx) => 
-      isStepCompleted(path, idx)
-    ).length;
-    return Math.round((completedSteps / path.steps.length) * 100);
-  }, [isStepCompleted]);
 
-  // --- Render Functions ---
+  // Handle resource click
+  const handleResourceClick = useCallback((resource: LearningResource, topicId: string) => {
+    if (resource.type === 'video') {
+      const topic = getTopicById(topicId);
+      const topicName = topic?.name || 'this topic';
+      
+      // Show a modal with a link to search for videos
+      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(topicName + ' tutorial')}`;
+      
+      setModalContent({
+        title: `Video for ${topicName}`,
+        isVideo: true,
+        searchUrl
+      });
+      setShowComingSoon(true);
+    } else if (resource.type === 'practice' || resource.type === 'quiz') {
+      // For practice and quiz, show coming soon modal
+      const topic = getTopicById(topicId);
+      const title = `${resource.type === 'practice' ? 'Practice' : 'Quiz'} for ${topic?.name || 'this topic'}`;
+      
+      setModalContent({
+        title,
+        isVideo: false
+      });
+      setShowComingSoon(true);
+    }
+  }, []);
+
+  // Calculate path progress
+  const calculatePathProgress = useCallback((path: LearningPath): number => {
+    if (!path.steps.length) return 0;
+    const completedSteps = path.completedSteps?.length || 0;
+    return Math.round((completedSteps / path.steps.length) * 100);
+  }, []);
+
+  // Get path color based on strategy
+  const getPathColor = (strategy: string): string => {
+    switch (strategy) {
+      case 'fastest': return 'from-blue-500 to-blue-600';
+      case 'mostThorough': return 'from-purple-500 to-purple-600';
+      case 'examFocused': return 'from-green-500 to-green-600';
+      default: return 'from-gray-500 to-gray-600';
+    }
+  };
+
+  // Get path icon based on strategy
+  const getPathIcon = (strategy: string) => {
+    switch (strategy) {
+      case 'fastest': return '⚡';
+      case 'mostThorough': return '📚';
+      case 'examFocused': return '📝';
+      default: return '📊';
+    }
+  };
+
+  // Get mastery color class
+  const getMasteryColor = (mastery: number): string => {
+    if (mastery >= 0.8) return 'text-green-600 dark:text-green-400';
+    if (mastery >= 0.5) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-red-600 dark:text-red-400';
+  };
 
   // Render the path selection tabs
   const renderPathTabs = () => {
@@ -465,7 +488,7 @@ export default function LearningPathVisualization({
               className={`flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-medium rounded-lg transition-all ${
                 selectedPath === path.strategy
                   ? `bg-gradient-to-r ${getPathColor(path.strategy)} text-white shadow-md`
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700'
               }`}
             >
               <span className="mr-2">{getPathIcon(path.strategy)}</span>
@@ -487,314 +510,283 @@ export default function LearningPathVisualization({
     if (!selectedPathData) return null;
 
     const progress = calculatePathProgress(selectedPathData);
-    // FIX: Compare path.id to activeLearningPath, not path.strategy
-    const isActivePath = activeLearningPath === selectedPathData.id; 
-
+    const isPathStarted = selectedPathData.startedAt !== undefined;
+    
     return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              {selectedPathData.name}
-            </h2>
-            {!isActivePath ? (
-              <button
-                onClick={() => handleStartPath(selectedPathData)}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                Start Learning Path
-              </button>
-            ) : (
-              <div className="text-sm text-gray-500">
-                In Progress: **{progress}%**
-              </div>
-            )}
+      <div className="mt-6 space-y-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedPathData.name}</h2>
+              <p className="mt-1 text-gray-600 dark:text-gray-300">{selectedPathData.description}</p>
+            </div>
+            <div className="mt-4 md:mt-0">
+              {!isPathStarted ? (
+                <button
+                  onClick={() => handleStartPath(selectedPathData)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:bg-blue-700 dark:hover:bg-blue-600"
+                >
+                  Start Learning Path
+                </button>
+              ) : (
+                <div className="flex items-center">
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 mr-3">
+                    <div 
+                      className="bg-blue-600 h-2.5 rounded-full dark:bg-blue-500" 
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{progress}%</span>
+                </div>
+              )}
+            </div>
           </div>
-          
-          <p className="text-gray-600 mb-4">{selectedPathData.description}</p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-            <div className="flex items-center">
-              <svg className="h-5 w-5 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="flex items-center text-gray-600 dark:text-gray-300">
+              <svg className="h-5 w-5 text-gray-400 dark:text-gray-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               {selectedPathData.estimatedTime} minutes
             </div>
-            <div className="flex items-center">
-              <svg className="h-5 w-5 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex items-center text-gray-600 dark:text-gray-300">
+              <svg className="h-5 w-5 text-gray-400 dark:text-gray-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              {Math.round(selectedPathData.confidence * 100)}% confidence
+              {selectedPathData.steps.length} topics
             </div>
-            <div className="flex items-center">
-              <svg className="h-5 w-5 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            <div className="flex items-center text-gray-600 dark:text-gray-300">
+              <svg className="h-5 w-5 text-gray-400 dark:text-gray-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
-              {selectedPathData.steps.length} steps
+              {selectedPathData.strategy === 'fastest' ? 'Fast Track' : 
+               selectedPathData.strategy === 'mostThorough' ? 'Comprehensive' : 'Exam Focused'}
             </div>
           </div>
-          
-          {isActivePath && (
-            <div className="mt-4">
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div 
-                  className="bg-blue-600 h-2.5 rounded-full" 
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Learning path steps */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-gray-900">Learning Path Steps</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Learning Path</h3>
           
-          {selectedPathData.steps.map((step, stepIndex) => {
-            const isExpanded = expandedTopics.has(step.topicId);
-            const isCompleted = isStepCompleted(selectedPathData, stepIndex);
-            const isCurrentStep = selectedPathData.currentStep === stepIndex;
-            const topic = getTopicById(step.topicId);
-            
-            return (
-              <div 
-                key={step.id} 
-                className={`border rounded-lg overflow-hidden ${
-                  isCurrentStep ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
-                }`}
-              >
+          <div className="space-y-3">
+            {selectedPathData.steps.map((step, stepIndex) => {
+              const isExpanded = expandedTopics.has(step.topicId);
+              const isCompleted = selectedPathData.completedSteps?.includes(stepIndex) || false;
+              
+              return (
                 <div 
-                  className={`p-4 cursor-pointer ${isExpanded ? 'border-b border-gray-200' : ''}`}
-                  onClick={() => toggleTopic(step.topicId)}
+                  key={step.id} 
+                  className={`border rounded-lg overflow-hidden transition-all ${
+                    isExpanded ? 'border-blue-300 dark:border-blue-700' : 'border-gray-200 dark:border-gray-700'
+                  }`}
                 >
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0 pt-0.5">
-                      <div 
-                        className={`flex items-center justify-center h-8 w-8 rounded-full ${
-                          isCompleted 
-                            ? 'bg-green-100 text-green-700' 
-                            : isCurrentStep 
-                              ? 'bg-blue-100 text-blue-700' 
-                              : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
+                  <button
+                    className={`w-full flex items-center justify-between p-4 text-left ${
+                      isExpanded ? 'bg-gray-50 dark:bg-gray-800' : 'bg-white dark:bg-gray-800'
+                    }`}
+                    onClick={() => toggleTopic(step.topicId)}
+                  >
+                    <div className="flex items-center">
+                      <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mr-3 ${
+                        isCompleted 
+                          ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' 
+                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                      }`}>
                         {isCompleted ? (
-                          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>
                         ) : (
-                          stepIndex + 1
+                          <span className="text-xs font-medium">{stepIndex + 1}</span>
                         )}
                       </div>
-                    </div>
-                    
-                    <div className="ml-4 flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className={`text-base font-medium ${
-                          isCurrentStep ? 'text-blue-800' : 'text-gray-900'
+                      <div>
+                        <h4 className={`text-sm font-medium ${
+                          isCompleted 
+                            ? 'text-green-700 dark:text-green-400' 
+                            : 'text-gray-900 dark:text-white'
                         }`}>
                           {step.name}
                         </h4>
-                        
-                        <div className="flex items-center space-x-2">
-                          <span className="text-sm text-gray-500">
-                            {step.estimatedTime} min
+                        <div className="flex items-center mt-1">
+                          <span className={`text-xs ${
+                            isCompleted 
+                              ? 'text-green-600 dark:text-green-400' 
+                              : 'text-gray-500 dark:text-gray-400'
+                          }`}>
+                            {step.estimatedTime} min • 
+                            <span className={getMasteryColor(step.currentMastery || 0)}>
+                              {' '}{Math.round((step.currentMastery || 0) * 100)}% Mastery
+                            </span>
                           </span>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCompleteStep(selectedPathData.id, stepIndex);
-                            }}
-                            className={`px-2 py-1 text-xs rounded-md ${
-                              isCompleted 
-                                ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            {isCompleted ? 'Completed' : 'Mark Complete'}
-                          </button>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleTopic(step.topicId);
-                            }}
-                            className="p-1 text-gray-400 hover:text-gray-600"
-                          >
-                            <svg 
-                              className={`h-5 w-5 transform transition-transform ${
-                                isExpanded ? 'rotate-180' : ''
-                              }`} 
-                              fill="none" 
-                              viewBox="0 0 24 24" 
-                              stroke="currentColor"
-                            >
-                              <path 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
-                                strokeWidth={2} 
-                                d="M19 9l-7 7-7-7" 
-                              />
-                            </svg>
-                          </button>
                         </div>
                       </div>
-                      
+                    </div>
+                    <svg 
+                      className={`h-5 w-5 text-gray-400 transform transition-transform ${
+                        isExpanded ? 'rotate-180' : ''
+                      }`} 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {isExpanded && (
+                    <div className="bg-gray-50 dark:bg-gray-800/50 p-4 border-t border-gray-200 dark:border-gray-700">
                       {step.description && (
-                        <p className="mt-1 text-sm text-gray-600">
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                           {step.description}
                         </p>
                       )}
                       
-                      {/* Prerequisites */}
-                      {topic?.prerequisites?.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs text-gray-500 mb-1">
-                            Prerequisites:
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {topic.prerequisites.map((prereqId, i) => {
-                              const prereqTopic = getTopicById(prereqId);
-                              const prereqMastery = learningAssistant.getTopicMastery(prereqId);
-                              // Assuming requiredMastery is 0.8 for the sake of rendering
-                              const requiredMastery = 0.8; 
-                              const isPrereqMet = prereqMastery >= requiredMastery;
-                              
-                              return (
-                                <span
-                                  key={i}
-                                  className={`text-xs px-2 py-0.5 rounded-full ${
-                                    isPrereqMet
-                                      ? 'bg-green-100 text-green-800'
-                                      : 'bg-yellow-100 text-yellow-800'
-                                  }`}
-                                  title={`${prereqTopic?.name || 'Topic'}: ${
-                                    isPrereqMet ? 'Mastered' : 'Needs review'
-                                  } (${Math.round(prereqMastery * 100)}% / ${
-                                    Math.round(requiredMastery * 100)
-                                  }% required)`}
-                                >
-                                  {prereqTopic?.name || `Prerequisite ${i + 1}`}
-                                  {isPrereqMet ? ' ✓' : ' !'}
-                                </span>
-                              );
-                            })}
-                          </div>
+                      <div className="space-y-3 mt-4">
+                        <h5 className="text-sm font-medium text-gray-700 dark:text-gray-200">Resources</h5>
+                        
+                        <div className="grid grid-cols-1 gap-3">
+                          {step.resources?.map((resource) => (
+                            <ResourceCard
+                              key={resource.id}
+                              resource={resource}
+                              onComplete={() => toggleResourceComplete(selectedPathData.id, stepIndex, resource.id)}
+                              onClick={() => handleResourceClick(resource, step.topicId)}
+                            />
+                          ))}
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-                
-                {isExpanded && (
-                  <div className="p-4 bg-gray-50 border-t border-gray-200">
-                    <h5 className="text-sm font-medium text-gray-700 mb-3">
-                      Learning Resources
-                    </h5>
-                    
-                    <div className="space-y-3">
-                      {step.resources?.map((resource, resIndex) => (
-                        <ResourceCard
-                          key={resource.id || `resource-${stepIndex}-${resIndex}`}
-                          resource={resource}
-                          onComplete={() => 
-                            toggleResourceComplete(
-                              selectedPathData.id, 
-                              stepIndex, 
-                              resource.id
-                            )
-                          }
-                        />
-                      )) || (
-                        <p className="text-sm text-gray-500 italic">
-                          No resources available for this topic.
-                        </p>
-                      )}
-                    </div>
-                    
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        onClick={() => {
-                          if (onTopicSelect) {
-                            onTopicSelect(step.topicId);
-                          }
-                          // Note: client-side navigation using router.push
-                          router.push(`#/learn/${step.topicId}`);
-                        }}
-                        className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
-                      >
-                        <span>Start Learning</span>
-                        <svg 
-                          className="ml-1 h-4 w-4" 
-                          fill="none" 
-                          viewBox="0 0 24 24" 
-                          stroke="currentColor"
-                        >
-                          <path 
-                            strokeLinecap="round" 
-                            strokeLinejoin="round" 
-                            strokeWidth={2} 
-                            d="M14 5l7 7m0 0l-7 7m7-7H3" 
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Coming Soon Modal
+  const ComingSoonModal = () => {
+    const { title, isVideo, searchUrl } = modalContent;
+
+    return (
+      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+        <div className="relative bg-white dark:bg-gray-800 rounded-xl p-8 max-w-2xl w-full shadow-2xl border border-gray-200 dark:border-gray-700">
+          {/* Close button - positioned at top right */}
+          <button
+            onClick={() => setShowComingSoon(false)}
+            className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+            aria-label="Close modal"
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          
+          <div className="text-center">
+            <div className={`mx-auto flex items-center justify-center h-16 w-16 rounded-full mb-4 ${
+              isVideo 
+                ? 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400' 
+                : 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
+            }`}>
+              {isVideo ? (
+                <svg className="h-8 w-8" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v8a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" />
+                </svg>
+              ) : (
+                <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+            </div>
+            
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+              {isVideo ? 'Video Tutorial' : 'Coming Soon!'}
+            </h3>
+            
+            <div className="mt-4">
+              <p className="text-lg text-gray-600 dark:text-gray-300">
+                {isVideo ? (
+                  <>
+                    Find a tutorial for <span className="font-medium">{title.replace('Video for ', '')}</span> on YouTube.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium">{title}</span> is currently under development.
+                  </>
                 )}
-              </div>
-            );
-          })}
+              </p>
+              
+              {isVideo && searchUrl && (
+                <div className="mt-6">
+                  <a
+                    href={searchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg shadow-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                  >
+                    <svg className="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z" />
+                    </svg>
+                    Watch on YouTube
+                  </a>
+                </div>
+              )}
+              {!isVideo && (
+                <p className="mt-2 text-gray-500 dark:text-gray-400">
+                  We're working hard to bring you this feature as soon as possible. Please check back later!
+                </p>
+              )}
+            </div>
+            
+            <div className="mt-8">
+              <button
+                type="button"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-blue-700 dark:hover:bg-blue-600"
+                onClick={() => setShowComingSoon(false)}
+              >
+                {isVideo ? 'Close' : 'Got it, thanks!'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
   };
 
   // --- Initial Render / Fallback Renders ---
-
   if (!targetTopicId) {
-    // This fallback logic is necessary if the component is used without targetTopicId
-    // and is placed outside the main render block for cleaner flow.
     const handleTopicSelect = (topicId: string) => {
-        if (onTopicSelect) {
-          onTopicSelect(topicId);
-        }
-    };
-    const getMasteryColor = (mastery: number) => {
-        if (mastery >= 0.8) return 'bg-green-500';
-        if (mastery >= 0.5) return 'bg-yellow-500';
-        return 'bg-red-500';
+      if (onTopicSelect) {
+        onTopicSelect(topicId);
+      }
     };
 
     return (
-      <div className="p-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-100">
+      <div className="p-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-100 dark:bg-gray-800/50 dark:border-gray-700">
         <div className="text-center">
-          <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4">
+            <svg className="h-8 w-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-1">No Topic Selected</h3>
-          <p className="text-gray-600">Select a topic to view personalized learning paths</p>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {topics.slice(0, 4).map(topic => (
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Select a Topic</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-6">
+            Choose a topic to view personalized learning paths and resources.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {topics.map((topic) => (
               <button
                 key={topic.id}
                 onClick={() => handleTopicSelect(topic.id)}
-                className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                className="px-4 py-3 bg-white border border-gray-200 rounded-lg text-left hover:bg-gray-50 transition-colors dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-600"
               >
-                <div className="font-medium text-gray-900">{topic.name}</div>
-                <div className="flex items-center mt-1">
-                  <div className="w-full bg-gray-200 rounded-full h-1.5 mr-2">
-                    <div 
-                      className={`h-1.5 rounded-full ${getMasteryColor(learningAssistant.getTopicMastery(topic.id))}`}
-                      style={{ width: `${learningAssistant.getTopicMastery(topic.id) * 100}%` }}
-                    ></div>
-                  </div>
-                  <span className="text-xs text-gray-500">
-                    {Math.round(learningAssistant.getTopicMastery(topic.id) * 100)}%
-                  </span>
-                </div>
+                <h4 className="font-medium text-gray-900 dark:text-white">{topic.name}</h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {topic.description}
+                </p>
               </button>
             ))}
           </div>
@@ -803,43 +795,34 @@ export default function LearningPathVisualization({
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="p-12 flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-        <p className="text-gray-600">Generating your personalized learning path...</p>
-      </div>
-    );
-  }
-
-  if (paths.length === 0) {
-    return (
-      <div className="p-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-100">
-        <div className="text-center">
-          <div className="mx-auto w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-1">No Paths Available</h3>
-          <p className="text-gray-600 mb-4">We couldn't generate a learning path for this topic with the current settings.</p>
-          <button
-            onClick={loadPaths}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-
-  // --- Main Render Block ---
   return (
-    <div className={`${className} space-y-6`}>
+    <div className={`space-y-6 ${className}`}>
+      {showComingSoon && <ComingSoonModal />}
+      
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Learning Path</h2>
+        {activeLearningPath && (
+          <button
+            onClick={() => {
+              localStorage.removeItem('activeLearningPath');
+              setActiveLearningPath(null);
+            }}
+            className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Start Over
+          </button>
+        )}
+      </div>
+      
       {renderPathTabs()}
-      {renderSelectedPath()}
+      
+      {isLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+        </div>
+      ) : (
+        renderSelectedPath()
+      )}
     </div>
   );
 }
