@@ -270,7 +270,7 @@ export default function LearningPathVisualization({
             id: `step-${index + 1}-${topicId}`,
             topicId,
             name: topic?.name || `Topic ${index + 1}`,
-            description: topic?.description || '',
+            description: '', // Removed description as it's not in the Topic type
             estimatedTime: topic?.estimatedTime || 30,
             resources: [
               {
