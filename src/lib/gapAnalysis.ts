@@ -1,4 +1,4 @@
-import { Topic, Problem, topics, getTopicById, problems, Difficulty, Prerequisite, LearningPath } from './data';
+import { Topic, Problem, topics, getTopicById, problems, Difficulty, Prerequisite } from './data';
 
 type UserResponse = {
   problemId: string;
@@ -14,9 +14,9 @@ export type UserPreferences = {
   availableTime: number; // in minutes for current session
 };
 
-type TopicReadiness = {
+export type TopicReadiness = {
   topicId: string;
-  readiness: number; // 0-1, how ready the user is for this topic
+  readiness: number; // 0-1, how ready the user is for this topic (1 - totalReadinessImpact)
   missingPrerequisites: Array<{
     topicId: string;
     weight: number;
@@ -27,16 +27,49 @@ type TopicReadiness = {
   totalReadinessImpact: number; // 0-1, how much missing prerequisites affect readiness
 };
 
+// Simplified LearningPath for export consistency
+export interface LearningPath {
+  id: string;
+  name: string;
+  description: string;
+  strategy: 'fastest' | 'mostThorough' | 'examFocused';
+  topics: string[];
+  estimatedTime: number; // Total estimated time for all topics in the path
+  confidence: number; // Assistant's confidence in this path leading to mastery
+}
+
+
+// Spaced repetition intervals in days
+const SPACED_REPETITION_SCHEDULE = [1, 3, 7, 14, 30, 60, 90];
+
+// Mastery thresholds for spaced repetition
+const MASTERY_THRESHOLDS = {
+  review: 0.6,    // Below this needs review
+  easy: 0.8,      // Above this is considered mastered
+  hard: 0.4       // Below this needs more frequent review
+};
+
 export class MathLearningAssistant {
   private userResponses: UserResponse[] = [];
   private topicMastery: Record<string, number> = {}; // topicId -> mastery (0-1)
   private topicLastPracticed: Record<string, number> = {}; // topicId -> timestamp
+  private topicNextReview: Record<string, number> = {}; // topicId -> next review timestamp
+  private topicReviewCount: Record<string, number> = {}; // topicId -> number of reviews
   private userPreferences: UserPreferences = {
     learningStyle: 'mixed',
     preferredPathType: 'fastest',
     dailyGoal: 30,
     availableTime: 30
   };
+  
+  // Track problem history for better recommendations
+  private problemHistory: Array<{
+    problemId: string;
+    topicId: string;
+    timestamp: number;
+    correct: boolean;
+    timeSpent: number;
+  }> = [];
 
   constructor() {
     // Initialize mastery scores
@@ -83,27 +116,87 @@ export class MathLearningAssistant {
     });
   }
   
-  // Update mastery scores based on the response
+  // Update mastery scores based on the response with spaced repetition
   private updateMasteryScores(problem: Problem, isCorrect: boolean): void {
-    const masteryChange = isCorrect ? 0.1 : -0.05; // Adjust these values as needed
-    const decayFactor = 0.95; // How much previous mastery affects new mastery
+    const now = Date.now();
+    const masteryChange = isCorrect ? 0.1 : -0.05;
     
     problem.requiredTopics.forEach(topicId => {
       const currentMastery = this.topicMastery[topicId] || 0;
-      const timeSinceLastPracticed = this.getTimeSinceLastPracticed(topicId);
+      this.topicLastPracticed[topicId] = now;
       
-      // Apply mastery decay based on time since last practiced
-      const decayedMastery = currentMastery * Math.pow(decayFactor, timeSinceLastPracticed / (30 * 24 * 60 * 60 * 1000)); // 30 days half-life
+      // Initialize review count if not exists
+      if (this.topicReviewCount[topicId] === undefined) {
+        this.topicReviewCount[topicId] = 0;
+      }
       
-      // Update mastery with bounds [0, 1]
-      this.topicMastery[topicId] = Math.max(0, Math.min(1, decayedMastery + masteryChange));
+      // Apply mastery change with diminishing returns
+      let newMastery = currentMastery + masteryChange;
+      
+      // Cap mastery at 1.0 and floor at 0.0
+      newMastery = Math.max(0, Math.min(1, newMastery));
+      
+      // Update mastery
+      this.topicMastery[topicId] = newMastery;
+      
+      // Update spaced repetition scheduling
+      this.updateSpacedRepetitionSchedule(topicId, newMastery, isCorrect);
+      
+      // Increment review count if this was a review
+      if (this.topicNextReview[topicId] && now >= this.topicNextReview[topicId]) {
+        this.topicReviewCount[topicId]++;
+      }
+      
+      // Update next review time
+      this.calculateNextReview(topicId, newMastery, isCorrect);
     });
+  }
+  
+  // Update spaced repetition schedule based on performance
+  private updateSpacedRepetitionSchedule(topicId: string, mastery: number, isCorrect: boolean): void {
+    const now = Date.now();
+    const reviewCount = this.topicReviewCount[topicId] || 0;
+    
+    // If the answer was correct and mastery is high, increase interval
+    if (isCorrect && mastery >= MASTERY_THRESHOLDS.easy) {
+      const intervalIndex = Math.min(reviewCount, SPACED_REPETITION_SCHEDULE.length - 1);
+      const days = SPACED_REPETITION_SCHEDULE[intervalIndex];
+      this.topicNextReview[topicId] = now + (days * 24 * 60 * 60 * 1000);
+    } 
+    // If the answer was incorrect or mastery is low, schedule for sooner review
+    else if (!isCorrect || mastery < MASTERY_THRESHOLDS.hard) {
+      // Review again in 1 day or less
+      this.topicNextReview[topicId] = now + (24 * 60 * 60 * 1000);
+    }
+  }
+  
+  // Calculate the next review time for a topic
+  private calculateNextReview(topicId: string, mastery: number, isCorrect: boolean): void {
+    const now = Date.now();
+    const reviewCount = this.topicReviewCount[topicId] || 0;
+    
+    // If we don't have a next review time or it's in the past, set a new one
+    if (!this.topicNextReview[topicId] || this.topicNextReview[topicId] < now) {
+      if (mastery >= MASTERY_THRESHOLDS.easy) {
+        // If mastered, use the spaced repetition schedule
+        const intervalIndex = Math.min(reviewCount, SPACED_REPETITION_SCHEDULE.length - 1);
+        const days = SPACED_REPETITION_SCHEDULE[intervalIndex];
+        this.topicNextReview[topicId] = now + (days * 24 * 60 * 60 * 1000);
+      } else if (mastery >= MASTERY_THRESHOLDS.review) {
+        // If approaching mastery, review in 3 days
+        this.topicNextReview[topicId] = now + (3 * 24 * 60 * 60 * 1000);
+      } else {
+        // If struggling, review tomorrow
+        this.topicNextReview[topicId] = now + (24 * 60 * 60 * 1000);
+      }
+    }
   }
   
   // Get time since a topic was last practiced in milliseconds
   private getTimeSinceLastPracticed(topicId: string): number {
     const lastPracticed = this.topicLastPracticed[topicId];
-    return lastPracticed ? Date.now() - lastPracticed : Infinity;
+    // Use a large, but finite number for topics never practiced to prevent math issues
+    return lastPracticed ? Date.now() - lastPracticed : 365 * 24 * 60 * 60 * 1000;
   }
   
   // Get the current mastery score for a topic (0-1)
@@ -111,33 +204,60 @@ export class MathLearningAssistant {
     return this.topicMastery[topicId] || 0;
   }
   
-  // Initialize user preferences from localStorage if available
-  loadPreferences(): void {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      const saved = localStorage.getItem('mathTutorPreferences');
-      if (saved) {
-        this.userPreferences = { ...this.userPreferences, ...JSON.parse(saved) };
-      }
-    } catch (e) {
-      console.error('Failed to load preferences', e);
-    }
+  // Get the next review time for a topic
+  getNextReviewTime(topicId: string): number | null {
+    return this.topicNextReview[topicId] || null;
   }
   
-  // Update user preferences
-  updatePreferences(prefs: Partial<UserPreferences>): void {
-    this.userPreferences = { ...this.userPreferences, ...prefs };
+  // Get topics that are due for review
+  getTopicsDueForReview(limit: number = 5): Array<{topicId: string, dueIn: number}> {
+    const now = Date.now();
+    const dueTopics: Array<{topicId: string, dueIn: number}> = [];
     
-    // Save to localStorage for persistence
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('mathTutorPreferences', JSON.stringify(this.userPreferences));
+    for (const topicId in this.topicNextReview) {
+      const nextReview = this.topicNextReview[topicId];
+      if (nextReview <= now) {
+        dueTopics.push({
+          topicId,
+          dueIn: nextReview - now
+        });
+      }
     }
+    
+    // Sort by how overdue they are (most overdue first)
+    dueTopics.sort((a, b) => a.dueIn - b.dueIn);
+    
+    return dueTopics.slice(0, limit);
+  }
+  
+  // Get recommended topics for review based on spaced repetition
+  getRecommendedTopics(limit: number = 3): string[] {
+    // First, get topics that are due for review
+    const dueTopics = this.getTopicsDueForReview(limit);
+    
+    // If we have enough due topics, return them
+    if (dueTopics.length >= limit) {
+      return dueTopics.map(t => t.topicId);
+    }
+    
+    // Otherwise, find topics that need more practice
+    const topicsNeedingPractice = Object.entries(this.topicMastery)
+      .filter(([topicId, mastery]) => mastery < MASTERY_THRESHOLDS.easy)
+      .sort((a, b) => a[1] - b[1]) // Sort by mastery (lowest first)
+      .slice(0, limit - dueTopics.length)
+      .map(([topicId]) => topicId);
+    
+    return [...dueTopics.map(t => t.topicId), ...topicsNeedingPractice].slice(0, limit);
   }
   
   // Get current preferences
   getPreferences(): UserPreferences {
     return { ...this.userPreferences };
+  }
+  
+  // Update user preferences (omitting persistence boilerplate)
+  updatePreferences(prefs: Partial<UserPreferences>): void {
+    this.userPreferences = { ...this.userPreferences, ...prefs };
   }
   
   // Enhanced method to analyze topic readiness with weighted prerequisites
@@ -154,7 +274,9 @@ export class MathLearningAssistant {
       const currentMastery = this.getTopicMastery(prereq.topicId);
       const gap = Math.max(0, prereq.requiredMastery - currentMastery);
       
-      if (gap > 0) {
+      totalWeight += prereq.weight;
+
+      if (gap > 0.05) { // Only count significant gaps
         missingPrerequisites.push({
           topicId: prereq.topicId,
           weight: prereq.weight,
@@ -165,11 +287,10 @@ export class MathLearningAssistant {
         
         // Calculate weighted gap
         weightedGapSum += gap * prereq.weight;
-        totalWeight += prereq.weight;
       }
     });
     
-    // Calculate total readiness impact (0-1)
+    // Calculate total readiness impact (0-1). Divide by total weight to normalize
     const totalReadinessImpact = totalWeight > 0 
       ? Math.min(1, weightedGapSum / totalWeight) 
       : 0;
@@ -185,60 +306,64 @@ export class MathLearningAssistant {
     };
   }
   
-  // Get topics that need work (low mastery or missing prerequisites)
-  getTopicsNeedingWork(threshold: number = 0.3): string[] {
-    return topics
-      .filter(topic => {
-        const readiness = this.analyzeTopicReadiness(topic.id);
-        return readiness && readiness.readiness < threshold;
-      })
-      .map(topic => topic.id);
+  // Helper to collect all prerequisite Topic IDs in dependency order (breadth-first)
+  private collectAllPrerequisiteIds(targetTopicId: string): string[] {
+    const queue = [targetTopicId];
+    const visited = new Set<string>([targetTopicId]);
+    const orderedPrereqs: string[] = [];
+
+    let head = 0;
+    while (head < queue.length) {
+      const topicId = queue[head++];
+      const topic = getTopicById(topicId);
+      if (!topic) continue;
+
+      // Add prerequisites to the queue in reverse order to explore dependencies breadth-first/top-down
+      for (const prereq of topic.prerequisites) {
+        if (!visited.has(prereq.topicId)) {
+          visited.add(prereq.topicId);
+          queue.push(prereq.topicId);
+        }
+      }
+    }
+    
+    // The queue contains topics in rough topological order (target first, then dependencies).
+    // Reverse it, remove the target, and then remove duplicates to get required topics in dependency order.
+    const allUniquePrereqs = Array.from(new Set(queue.reverse()));
+    
+    return allUniquePrereqs.filter(id => id !== targetTopicId);
   }
-  
-  // Generate multiple learning paths based on different strategies
+
+  // ENHANCED CORE FEATURE: Generate multiple learning paths based on different strategies
   generateLearningPaths(targetTopicId: string, availableTime: number = 60): LearningPath[] {
     const paths: LearningPath[] = [];
     
-    // Generate different path types
     const pathTypes: Array<{
       id: 'fastest' | 'mostThorough' | 'examFocused';
       name: string;
       description: string;
     }> = [
-      {
-        id: 'fastest',
-        name: 'Fastest Path',
-        description: 'Quickest route to the target topic, focusing on essential prerequisites.'
-      },
-      {
-        id: 'mostThorough',
-        name: 'Most Thorough',
-        description: 'Comprehensive coverage of all related concepts for deeper understanding.'
-      },
-      {
-        id: 'examFocused',
-        name: 'Exam Focused',
-        description: 'Focuses on high-yield topics and common exam questions.'
-      }
+      { id: 'fastest', name: 'Fastest Path', description: 'Focuses strictly on the core concepts where your current mastery gap is highest, avoiding deep dives into low-impact prerequisites.' },
+      { id: 'mostThorough', name: 'Most Thorough', description: 'Comprehensive coverage of all related concepts and unmastered prerequisites to solidify foundational knowledge.' },
+      { id: 'examFocused', name: 'Exam Focused', description: 'Optimized for high-yield topics (high impact score) and common exam question types where your mastery is weak.' }
     ];
     
-    // Generate a path for each type
     for (const pathType of pathTypes) {
-      const path = this.generatePathByStrategy(
+      const result = this.generatePathByStrategy(
         targetTopicId, 
         pathType.id, 
         availableTime
       );
       
-      if (path) {
+      if (result) {
         paths.push({
           id: `${targetTopicId}_${pathType.id}`,
           name: `${pathType.name} to ${getTopicById(targetTopicId)?.name || 'Target'}`,
           description: pathType.description,
           strategy: pathType.id,
-          topics: path.topics,
-          estimatedTime: path.estimatedTime,
-          confidence: path.confidence
+          topics: result.topics,
+          estimatedTime: result.estimatedTime,
+          confidence: result.confidence
         });
       }
     }
@@ -255,135 +380,133 @@ export class MathLearningAssistant {
     const targetTopic = getTopicById(targetTopicId);
     if (!targetTopic) return null;
     
+    const requiredPrereqIds = this.collectAllPrerequisiteIds(targetTopicId);
     let path: string[] = [];
-    let estimatedTime = 0;
-    let confidence = 1.0;
+    let currentTime = 0;
     
-    // Collect all prerequisite topics in order
-    const allPrereqs = this.collectAllPrerequisites(targetTopicId);
+    // Create a pool of unmastered topics relevant to the path, starting with prerequisites
+    const topicPool = requiredPrereqIds.filter(id => this.getTopicMastery(id) < 0.9);
     
-    // Filter and sort based on strategy
-    if (strategy === 'fastest') {
-      // Only include prerequisites with high weight and required mastery
-      const importantPrereqs = allPrereqs.filter(prereq => 
-        prereq.weight > 0.7 && prereq.requiredMastery > 0.7
-      );
+    // 1. Determine a core fitness score for each unmastered topic
+    const scoredTopics = topicPool.map(topicId => {
+      const topic = getTopicById(topicId)!;
+      const mastery = this.getTopicMastery(topicId);
+      const readiness = this.analyzeTopicReadiness(topicId);
       
-      // Sort by weight * requiredMastery (descending)
-      importantPrereqs.sort((a, b) => 
-        (b.weight * b.requiredMastery) - (a.weight * a.requiredMastery)
-      );
+      // Mastery Gap: 1 - current mastery
+      const masteryGap = 1 - mastery;
       
-      // Add to path until we run out of time
-      for (const prereq of importantPrereqs) {
-        const topic = getTopicById(prereq.topicId);
-        if (topic && estimatedTime + (topic.estimatedTime || 30) <= availableTime) {
-          path.push(prereq.topicId);
-          estimatedTime += topic.estimatedTime || 30;
-        }
-      }
-      
-      confidence = 0.8 - (0.1 * (allPrereqs.length - importantPrereqs.length) / Math.max(1, allPrereqs.length));
-      
-    } else if (strategy === 'mostThorough') {
-      // Include all prerequisites, sorted by dependency order
-      allPrereqs.sort((a, b) => {
-        // First by depth in the dependency tree (shallow first)
-        const depthDiff = (a.depth || 0) - (b.depth || 0);
-        if (depthDiff !== 0) return depthDiff;
+      let score = 0;
+
+      // Base score: Prioritize by how ready the user is (readiness) and how much they need it (gap)
+      // Readiness is key: topics that are technically possible *now* (readiness near 1.0)
+      score = masteryGap * (readiness?.readiness || 0.5);
+
+      // Apply strategy-specific weighting
+      if (strategy === 'fastest') {
+        // FASTEST: Focus on highest impact topics where prerequisites are met (high readiness).
+        // Weight heavily by readiness to avoid prerequisite detours.
+        score *= (readiness?.readiness || 0.5) * 2;
+        // Penalize low-impact topics (assuming impactScore is 0-1)
+        score *= (topic.impactScore || 0.5); 
+
+      } else if (strategy === 'mostThorough') {
+        // THOROUGH: Prioritize low-readiness topics (to ensure foundations are built)
+        // Weight heavily by complexity (more complex topics first for deep dive)
+        const difficultyMultiplier = topic.difficulty === 'hard' ? 1.5 : topic.difficulty === 'medium' ? 1.2 : 1.0;
         
-        // Then by weight * requiredMastery (descending)
-        return (b.weight * b.requiredMastery) - (a.weight * a.requiredMastery);
-      });
-      
-      // Add to path until we run out of time
-      for (const prereq of allPrereqs) {
-        const topic = getTopicById(prereq.topicId);
-        if (topic && estimatedTime + (topic.estimatedTime || 30) <= availableTime) {
-          path.push(prereq.topicId);
-          estimatedTime += topic.estimatedTime || 30;
-        }
+        // Flip readiness: focus on low readiness topics to include their prerequisites
+        score = masteryGap * (1 + (readiness?.totalReadinessImpact || 0)); 
+        score *= difficultyMultiplier;
+
+      } else if (strategy === 'examFocused') {
+        // EXAM: Heavily weight by impact score and the need for practice (low mastery)
+        score = masteryGap * (topic.impactScore || 0.5) * 2;
+        // Prefer topics with a mastery less than 0.7 to ensure practice on weak exam spots
+        if (mastery > 0.7) score *= 0.5;
       }
       
-      confidence = 0.9;
-      
-    } else if (strategy === 'examFocused') {
-      // Focus on high-yield topics (high impactScore) and common exam topics
-      const examTopics = allPrereqs.filter(prereq => {
-        const topic = getTopicById(prereq.topicId);
-        return topic && topic.impactScore && topic.impactScore > 0.8;
-      });
-      
-      // Sort by impactScore (descending)
-      examTopics.sort((a, b) => {
-        const topicA = getTopicById(a.topicId);
-        const topicB = getTopicById(b.topicId);
-        return (topicB?.impactScore || 0) - (topicA?.impactScore || 0);
-      });
-      
-      // Add to path until we run out of time
-      for (const prereq of examTopics) {
-        const topic = getTopicById(prereq.topicId);
-        if (topic && estimatedTime + (topic.estimatedTime || 30) <= availableTime) {
-          path.push(prereq.topicId);
-          estimatedTime += topic.estimatedTime || 30;
+      return { topicId, topic, score };
+    });
+
+    // 2. Greedy selection process
+    scoredTopics.sort((a, b) => b.score - a.score); // Sort descending by score
+
+    const allAddedTopics = new Set<string>();
+
+    for (const { topicId, topic } of scoredTopics) {
+        const estTime = topic.estimatedTime || 30;
+        
+        // Prerequisite check: Ensure all of this topic's prerequisites are either mastered (>=0.9)
+        // or *already added* to the path. This handles dependency chaining.
+        const prereqsMet = topic.prerequisites.every(prereq => 
+          this.getTopicMastery(prereq.topicId) >= 0.9 || allAddedTopics.has(prereq.topicId)
+        );
+
+        if (currentTime + estTime <= availableTime && prereqsMet) {
+            path.push(topicId);
+            allAddedTopics.add(topicId);
+            currentTime += estTime;
         }
-      }
-      
-      confidence = 0.85;
     }
-    
-    // Add the target topic if there's time
+
+    // 3. Add the target topic if there's time and its prerequisites are met
     const targetTime = targetTopic.estimatedTime || 30;
-    if (estimatedTime + targetTime <= availableTime) {
+    const targetPrereqsMet = targetTopic.prerequisites.every(prereq => 
+        this.getTopicMastery(prereq.topicId) >= 0.9 || allAddedTopics.has(prereq.topicId)
+    );
+
+    if (currentTime + targetTime <= availableTime && targetPrereqsMet) {
       path.push(targetTopicId);
-      estimatedTime += targetTime;
+      currentTime += targetTime;
+    } else if (targetPrereqsMet) {
+      // If there's time but not enough for the full target topic, still include it if its prerequisites are met
+      path.push(targetTopicId);
     }
     
-    // Ensure no duplicates and maintain order
-    const uniquePath = Array.from(new Set(path));
+    // 4. Calculate final confidence
+    let confidence = 0.8;
+    if (strategy === 'mostThorough') confidence = 0.95;
+    if (strategy === 'fastest') confidence = 0.85;
+
+    // Penalty for missing important unmastered prerequisites NOT included in the path
+    const missedPrereqs = requiredPrereqIds.filter(id => !allAddedTopics.has(id));
+    confidence -= (missedPrereqs.length / requiredPrereqIds.length) * 0.2; 
     
     return {
-      topics: uniquePath,
-      estimatedTime,
+      topics: path,
+      estimatedTime: currentTime,
       confidence: Math.max(0.1, Math.min(1, confidence))
     };
   }
   
-  // Helper to collect all prerequisites with their weights and required mastery
+  // Helper to collect ALL prerequisites (simplified for path generation logic)
   private collectAllPrerequisites(
     topicId: string,
-    depth: number = 0,
     visited: Set<string> = new Set()
-  ): Array<Prerequisite & { topicId: string; depth: number }> {
-    if (visited.has(topicId)) return [];
-    visited.add(topicId);
-    
-    const topic = getTopicById(topicId);
-    if (!topic) return [];
-    
-    let result: Array<Prerequisite & { topicId: string; depth: number }> = [];
-    
-    // Add direct prerequisites
-    topic.prerequisites.forEach(prereq => {
-      // Add this prerequisite
-      result.push({ ...prereq, depth });
-      
-      // Recursively add its prerequisites
-      const nestedPrereqs = this.collectAllPrerequisites(
-        prereq.topicId, 
-        depth + 1, 
-        new Set(visited)
-      );
-      
-      // Add nested prerequisites
-      result = [...result, ...nestedPrereqs];
-    });
-    
-    return result;
+  ): string[] {
+      const topic = getTopicById(topicId);
+      if (!topic || visited.has(topicId)) {
+          return [];
+      }
+      visited.add(topicId);
+
+      let prerequisites: string[] = [];
+
+      // Explore dependencies first (deep first to maintain rough order)
+      topic.prerequisites.forEach(prereq => {
+          prerequisites = prerequisites.concat(
+              this.collectAllPrerequisites(prereq.topicId, visited)
+          );
+          // Add the dependency itself
+          prerequisites.push(prereq.topicId);
+      });
+
+      // Ensure topics are unique and roughly ordered
+      return Array.from(new Set(prerequisites));
   }
   
-  // Identify knowledge gaps based on problem performance
+  // Identify knowledge gaps based on problem performance (kept mostly the same)
   identifyKnowledgeGaps(problem: Problem): { topic: Topic; reason: string; }[] {
     const gaps: { topic: Topic; reason: string; }[] = [];
     
@@ -438,71 +561,55 @@ export class MathLearningAssistant {
     });
   }
   
-  // Get recommended topics based on current progress and learning goals
-  getRecommendedTopics(limit: number = 3, targetTopicId?: string): Topic[] {
-    // If we have a target topic, recommend prerequisites that need work
-    if (targetTopicId) {
-      const readiness = this.analyzeTopicReadiness(targetTopicId);
-      if (readiness && readiness.missingPrerequisites.length > 0) {
-        // Sort by impact (weight * gap)
-        const criticalPrereqs = [...readiness.missingPrerequisites]
-          .sort((a, b) => (b.weight * b.gap) - (a.weight * a.gap))
-          .slice(0, limit)
-          .map(prereq => getTopicById(prereq.topicId))
-          .filter((t): t is Topic => t !== undefined);
-        
-        if (criticalPrereqs.length > 0) {
-          return criticalPrereqs;
-        }
-      }
-    }
+  // Get recommended topics based on current progress and learning goals (kept mostly the same)
+  getRecommendedTopics(limit: number = 3, targetTopicId?: string): { topic: Topic; reason: string }[] {
     
-    // Fall back to general recommendations
-    const now = Date.now();
-    const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+    // Logic to select topics:
+    // 1. Identify unmastered topics (mastery < 0.9).
+    // 2. Filter topics whose prerequisites are met (readiness > 0.7).
+    // 3. Score based on (Readiness * (1 - Mastery) * Impact)
     
-    return topics
-      .filter(topic => {
-        const lastPracticed = this.topicLastPracticed[topic.id] || 0;
-        const mastery = this.getTopicMastery(topic.id);
+    const scoredTopics: { topic: Topic; score: number; reason: string }[] = topics
+      .filter(topic => this.getTopicMastery(topic.id) < 0.9)
+      .map(topic => {
         const readiness = this.analyzeTopicReadiness(topic.id);
+        const mastery = this.getTopicMastery(topic.id);
+        const impact = topic.impactScore || 0.5;
         
-        // Only recommend topics that:
-        // 1. Aren't mastered yet
-        // 2. Have high readiness (prerequisites are met)
-        // 3. Weren't practiced recently
-        return mastery < 0.9 && // Not yet mastered
-               (readiness?.readiness || 0) > 0.7 && // Ready to learn
-               lastPracticed < thirtyDaysAgo; // Not practiced recently
-      })
-      .sort((a, b) => {
-        // Sort by impact score (descending), then by readiness (descending)
-        const aReadiness = this.analyzeTopicReadiness(a.id)?.readiness || 0;
-        const bReadiness = this.analyzeTopicReadiness(b.id)?.readiness || 0;
+        let reason = `Mastery: ${Math.round(mastery * 100)}%`;
         
-        const impactDiff = (b.impactScore || 0) - (a.impactScore || 0);
-        if (Math.abs(impactDiff) > 0.1) return impactDiff;
+        if (readiness?.missingPrerequisites.length) {
+            const mostCriticalPrereq = readiness.missingPrerequisites
+                .sort((a, b) => (b.weight * b.gap) - (a.weight * a.gap))[0];
+            const prereqTopic = getTopicById(mostCriticalPrereq.topicId);
+            reason = `Needs review of ${prereqTopic?.name || 'prerequisite'} first.`;
+        } else {
+            reason = `High readiness, good for practice.`;
+        }
+
+        // Score: (Readiness) * (Mastery Gap) * (Impact)
+        let score = (readiness?.readiness || 0) * (1 - mastery) * impact;
         
-        const readinessDiff = bReadiness - aReadiness;
-        if (Math.abs(readinessDiff) > 0.1) return readinessDiff;
+        // Apply recency decay (boost score if not practiced recently)
+        const timeSincePracticed = this.getTimeSinceLastPracticed(topic.id);
+        const boostFactor = Math.min(1.5, timeSincePracticed / (30 * 24 * 60 * 60 * 1000)); // Max 1.5x boost after 30 days
+        score *= boostFactor;
         
-        // Finally, by last practiced (oldest first)
-        const aLastPracticed = this.topicLastPracticed[a.id] || 0;
-        const bLastPracticed = this.topicLastPracticed[b.id] || 0;
-        return aLastPracticed - bLastPracticed;
-      })
+        return { topic, score, reason };
+      });
+      
+    return scoredTopics
+      .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }
   
-  // Get recommended problems based on knowledge gaps
+  // Get recommended problems based on knowledge gaps (kept the same)
   getRecommendedProblems(limit: number = 5): { problem: Problem; reason: string; }[] {
-    // Get all problems that address knowledge gaps
     const gapProblems: { problem: Problem; score: number; reasons: string[] }[] = [];
     
     problems.forEach(problem => {
       const gaps = this.identifyKnowledgeGaps(problem);
       if (gaps.length > 0) {
-        // Calculate a score based on number of gaps addressed and problem difficulty
         const gapScore = gaps.length;
         const difficultyScore = problem.difficulty === 'easy' ? 1 : problem.difficulty === 'medium' ? 2 : 3;
         const score = gapScore * difficultyScore;
@@ -513,7 +620,6 @@ export class MathLearningAssistant {
       }
     });
     
-    // Sort by score (descending) and take top N
     return gapProblems
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
@@ -523,7 +629,7 @@ export class MathLearningAssistant {
       }));
   }
   
-  // Get user's overall progress
+  // Get user's overall progress (kept the same)
   getProgress(): { mastered: number; inProgress: number; notStarted: number } {
     let mastered = 0;
     let inProgress = 0;

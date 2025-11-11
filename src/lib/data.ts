@@ -134,7 +134,7 @@ export const topics: Topic[] = [
 
 // Problems data
 export const problems: Problem[] = [
-  // Basic Arithmetic
+  // ===== Basic Arithmetic (Easy) =====
   {
     id: 'add1',
     question: 'What is 2 + 2?',
@@ -162,8 +162,46 @@ export const problems: Problem[] = [
     difficulty: 'easy',
     hints: ['Start with 10 and take away 7.']
   },
+  {
+    id: 'mult1',
+    question: 'What is 6 × 7?',
+    answer: '42',
+    solution: 'Multiply 6 by 7 to get 42.',
+    requiredTopics: ['basic_arithmetic'],
+    difficulty: 'easy',
+    hints: ['Remember your multiplication tables.']
+  },
+  {
+    id: 'div1',
+    question: 'What is 24 ÷ 6?',
+    answer: '4',
+    solution: 'Divide 24 by 6 to get 4.',
+    requiredTopics: ['basic_arithmetic'],
+    difficulty: 'easy',
+    hints: ['How many times does 6 go into 24?']
+  },
   
-  // Fractions
+  // ===== Basic Arithmetic (Medium) =====
+  {
+    id: 'arith1',
+    question: 'Calculate: 15 - (7 + 3) × 2',
+    answer: '-5',
+    solution: 'First, solve the parentheses: 7 + 3 = 10. Then multiply: 10 × 2 = 20. Finally, subtract: 15 - 20 = -5',
+    requiredTopics: ['basic_arithmetic'],
+    difficulty: 'medium',
+    hints: ['Remember PEMDAS/BODMAS order of operations.']
+  },
+  {
+    id: 'arith2',
+    question: 'What is 3.5 × 4.2?',
+    answer: '14.7',
+    solution: 'Multiply 35 × 42 = 1470, then place the decimal point two places from the right: 14.70',
+    requiredTopics: ['basic_arithmetic'],
+    difficulty: 'medium',
+    hints: ['Multiply as whole numbers first, then place the decimal.']
+  },
+  
+  // ===== Fractions (Easy) =====
   {
     id: 'frac1',
     question: 'What is 1/2 + 1/4?',
@@ -183,7 +221,27 @@ export const problems: Problem[] = [
     hints: ['What is the greatest common divisor of 4 and 8?']
   },
   
-  // Basic Algebra
+  // ===== Fractions (Medium) =====
+  {
+    id: 'frac3',
+    question: 'What is 2/3 × 5/8?',
+    answer: '5/12',
+    solution: 'Multiply numerators: 2×5=10. Multiply denominators: 3×8=24. Simplify: 10/24 = 5/12',
+    requiredTopics: ['fractions'],
+    difficulty: 'medium',
+    hints: ['Multiply across the top and bottom, then simplify.']
+  },
+  {
+    id: 'frac4',
+    question: 'Convert 0.75 to a fraction in simplest form',
+    answer: '3/4',
+    solution: '0.75 = 75/100 = 3/4',
+    requiredTopics: ['fractions'],
+    difficulty: 'medium',
+    hints: ['Think of 0.75 as 75 hundredths.']
+  },
+  
+  // ===== Basic Algebra (Easy) =====
   {
     id: 'alg1',
     question: 'Solve for x: x + 5 = 12',
