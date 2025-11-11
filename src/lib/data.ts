@@ -1,12 +1,32 @@
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
+export interface Prerequisite {
+  topicId: string;
+  weight: number; // 0-1, importance of this prerequisite
+  requiredMastery: number; // 0-1, minimum mastery needed
+}
+
 export interface Topic {
   id: string;
   name: string;
-  prerequisites: string[];
+  prerequisites: Prerequisite[];
   difficulty: Difficulty;
   mastery: number; // 0 to 1
   lastPracticed: number | null; // timestamp
+  impactScore?: number; // 0-1, how much this topic impacts future learning
+  estimatedTime?: number; // in minutes
+  category?: string;
+  tags?: string[];
+}
+
+export interface LearningPath {
+  id: string;
+  name: string;
+  description: string;
+  strategy: 'fastest' | 'mostThorough' | 'examFocused';
+  topics: string[]; // array of topic IDs in order
+  estimatedTime: number; // in minutes
+  confidence: number; // 0-1, confidence in this path's effectiveness
 }
 
 export interface Problem {
@@ -17,6 +37,9 @@ export interface Problem {
   requiredTopics: string[]; // Array of topic IDs
   difficulty: Difficulty;
   hints: string[];
+  timeEstimate?: number; // in minutes
+  commonMistakes?: string[];
+  relatedTopics?: string[]; // Topics that would benefit from this problem
 }
 
 // Topics data
@@ -27,47 +50,85 @@ export const topics: Topic[] = [
     prerequisites: [],
     difficulty: 'easy',
     mastery: 0,
-    lastPracticed: null
+    lastPracticed: null,
+    impactScore: 0.9,
+    estimatedTime: 30,
+    category: 'Foundations',
+    tags: ['arithmetic', 'basics']
   },
   {
     id: 'fractions',
     name: 'Fractions',
-    prerequisites: ['basic_arithmetic'],
+    prerequisites: [
+      { topicId: 'basic_arithmetic', weight: 0.8, requiredMastery: 0.7 }
+    ],
     difficulty: 'easy',
     mastery: 0,
-    lastPracticed: null
+    lastPracticed: null,
+    impactScore: 0.85,
+    estimatedTime: 45,
+    category: 'Number Sense',
+    tags: ['fractions', 'basics']
   },
   {
     id: 'basic_algebra',
     name: 'Basic Algebra',
-    prerequisites: ['basic_arithmetic', 'fractions'],
+    prerequisites: [
+      { topicId: 'basic_arithmetic', weight: 0.9, requiredMastery: 0.8 },
+      { topicId: 'fractions', weight: 0.7, requiredMastery: 0.6 }
+    ],
     difficulty: 'medium',
     mastery: 0,
-    lastPracticed: null
+    lastPracticed: null,
+    impactScore: 0.95,
+    estimatedTime: 60,
+    category: 'Algebra',
+    tags: ['algebra', 'equations']
   },
   {
     id: 'geometry',
     name: 'Geometry',
-    prerequisites: ['basic_arithmetic', 'fractions'],
+    prerequisites: [
+      { topicId: 'basic_arithmetic', weight: 0.7, requiredMastery: 0.6 },
+      { topicId: 'fractions', weight: 0.6, requiredMastery: 0.5 }
+    ],
     difficulty: 'medium',
     mastery: 0,
-    lastPracticed: null
+    lastPracticed: null,
+    impactScore: 0.75,
+    estimatedTime: 90,
+    category: 'Geometry',
+    tags: ['shapes', 'measurement']
   },
   {
     id: 'intermediate_algebra',
     name: 'Intermediate Algebra',
-    prerequisites: ['basic_algebra', 'geometry'],
+    prerequisites: [
+      { topicId: 'basic_algebra', weight: 0.9, requiredMastery: 0.8 },
+      { topicId: 'geometry', weight: 0.5, requiredMastery: 0.4 }
+    ],
     difficulty: 'hard',
     mastery: 0,
-    lastPracticed: null
+    lastPracticed: null,
+    impactScore: 0.85,
+    estimatedTime: 120,
+    category: 'Algebra',
+    tags: ['algebra', 'functions', 'graphing']
   },
   {
     id: 'word_problems',
     name: 'Word Problems',
-    prerequisites: ['basic_arithmetic', 'basic_algebra'],
+    prerequisites: [
+      { topicId: 'basic_arithmetic', weight: 0.8, requiredMastery: 0.7 },
+      { topicId: 'basic_algebra', weight: 0.7, requiredMastery: 0.6 }
+    ],
     difficulty: 'hard',
     mastery: 0,
-    lastPracticed: null
+    lastPracticed: null,
+    impactScore: 0.8,
+    estimatedTime: 90,
+    category: 'Problem Solving',
+    tags: ['word problems', 'applications']
   }
 ];
 
