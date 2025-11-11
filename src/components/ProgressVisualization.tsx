@@ -204,7 +204,7 @@ export default function ProgressVisualization({
           {(() => {
             const topicId = hoveredTopic || selectedTopicId;
             const topic = positions.find(t => t.id === topicId);
-            if (!topic) return null;
+            if (!topic || !topicId) return null;
             
             const readiness = learningAssistant.analyzeTopicReadiness(topicId);
             const missingPrerequisites = readiness?.missingPrerequisites || [];
